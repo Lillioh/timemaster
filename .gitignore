@@ -1,0 +1,31 @@
+# dependencies
+node_modules/
+.next/
+out/
+build/
+dist/
+coverage/
+
+# env
+.env
+.env.*
+!.env.example
+discord-attendance-bot/.env
+
+# logs
+*.log
+npm-debug.log*
+
+# system
+.DS_Store
+*.pem
+
+# vercel
+.vercel/
+
+# supabase
+supabase/.branches/
+supabase/.temp/
+
+# typescript
+*.tsbuildinfo

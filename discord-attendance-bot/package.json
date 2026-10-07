@@ -1,0 +1,28 @@
+{
+  "name": "discord-attendance-bot",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Discord voice attendance bot — emits JOIN/LEAVE/RECONCILE events to the TimeMaster attendance API.",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test src/daily-report/*.test.ts",
+    "report:test-send": "tsx src/daily-report/test-send.ts"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2",
+    "discord.js": "^14",
+    "dotenv": "^16.4.5"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "tsx": "^4",
+    "typescript": "^5"
+  }
+}

@@ -1,0 +1,71 @@
+@import "tailwindcss";
+
+:root {
+  --background: #ffffff;
+  --foreground: #171717;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0a0a0a;
+    --foreground: #ededed;
+  }
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+}
+
+/* Status dots — always paired with text labels, never color alone */
+.status-dot {
+  display: inline-block;
+  width: 0.625rem;
+  height: 0.625rem;
+  border-radius: 9999px;
+  flex-shrink: 0;
+}
+
+.status-dot-green {
+  background-color: #16a34a;
+}
+
+.status-dot-red {
+  background-color: #dc2626;
+}
+
+.status-dot-amber {
+  background-color: #d97706;
+}
+
+.status-dot-gray {
+  background-color: #6b7280;
+}
+
+.status-dot-blue {
+  background-color: #2563eb;
+}
+
+@media (prefers-color-scheme: dark) {
+  .status-dot-green {
+    background-color: #4ade80;
+  }
+  .status-dot-red {
+    background-color: #f87171;
+  }
+  .status-dot-amber {
+    background-color: #fbbf24;
+  }
+  .status-dot-gray {
+    background-color: #9ca3af;
+  }
+  .status-dot-blue {
+    background-color: #60a5fa;
+  }
+}
