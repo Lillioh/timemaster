@@ -18,24 +18,10 @@ import { Client, GatewayIntentBits } from "discord.js";
 import { config } from "../config.js";
 import { getSupabase } from "./supabase.js";
 import { buildDailyReportMessages, type ReportUserInput } from "./report.js";
+import { fetchSessionsForDate, type SessionRow } from "./sessions.js";
 
 // Explicit smoke-test target date (not derived from the current day).
 const TARGET_DATE = "2026-10-05";
-
-// Same raw join shape as the production fetcher in job.ts.
-interface RawSessionRow {
-  id: string;
-  clock_in: string;
-  clock_out: string | null;
-  duration_seconds: number | null;
-  status: string;
-  attendance_date: string;
-  discord_user_id: string;
-  users: Array<{
-    display_name: string | null;
-    discord_username: string | null;
-  }> | null;
-}
 
 async function main(): Promise<void> {
   console.log(`[test-send] target date=${TARGET_DATE}`);
@@ -43,15 +29,7 @@ async function main(): Promise<void> {
 
   // SELECT only — no inserts/updates/deletes anywhere in this script.
   const db = getSupabase();
-  const { data, error } = await db
-    .from("attendance_sessions")
-    .select(
-      "id,clock_in,clock_out,duration_seconds,status,attendance_date,discord_user_id,users(display_name,discord_username)",
-    )
-    .eq("attendance_date", TARGET_DATE)
-    .order("clock_in", { ascending: true });
-  if (error) throw error;
-  const rows = (data ?? []) as RawSessionRow[];
+  const rows = await fetchSessionsForDate(db, TARGET_DATE, config.appTimezone);
   console.log(`[test-send] sessions found=${rows.length}`);
 
   const client = new Client({
@@ -62,7 +40,7 @@ async function main(): Promise<void> {
 
     // Same bot filter as production: Discord's authoritative user.bot flag.
     // Fail open on fetch errors — never silently drop attendance data.
-    const byDiscord = new Map<string, RawSessionRow[]>();
+    const byDiscord = new Map<string, SessionRow[]>();
     for (const r of rows) {
       const list = byDiscord.get(r.discord_user_id) ?? [];
       list.push(r);
@@ -76,9 +54,7 @@ async function main(): Promise<void> {
         skippedBots += 1;
         continue;
       }
-      const profile = Array.isArray(sessions[0]?.users)
-        ? (sessions[0].users[0] ?? null)
-        : (sessions[0]?.users ?? null);
+      const profile = sessions[0]?.users ?? null;
       users.push({
         displayName: profile?.display_name ?? profile?.discord_username ?? discordId,
         sessions: sessions.map((s) => ({
@@ -108,7 +84,7 @@ async function main(): Promise<void> {
     let sent = 0;
     for (let i = 0; i < messages.length; i++) {
       try {
-        await channel.send({ content: messages[i] });
+        await channel.send({ content: messages[i], allowedMentions: { parse: [] } });
         sent += 1;
         console.log(`[test-send] sent part ${i + 1}/${messages.length} ok`);
       } catch (err) {

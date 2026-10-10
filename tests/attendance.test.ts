@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   calculateDurationSeconds,
+  dayBoundsUtc,
   dailyStatusFor,
   splitDurationByDate,
 } from "@/lib/attendance/calculate-duration";
@@ -51,6 +52,25 @@ describe("splitDurationByDate", () => {
     expect(
       splitDurationByDate(a, new Date("2026-01-01T09:00:00.000Z"), "UTC").size,
     ).toBe(0);
+  });
+
+  it("splits at Manila midnight rather than UTC midnight", () => {
+    const split = splitDurationByDate(new Date("2026-10-08T15:00:00Z"), new Date("2026-10-08T17:00:00Z"), "Asia/Manila");
+    expect(Object.fromEntries(split)).toEqual({ "2026-10-08": 3600, "2026-10-09": 3600 });
+  });
+
+  it("does not silently drop time after eight days", () => {
+    const split = splitDurationByDate(new Date("2026-10-01T00:00:00Z"), new Date("2026-10-11T00:00:00Z"), "UTC");
+    expect(split.size).toBe(10);
+    expect([...split.values()].reduce((a, b) => a + b, 0)).toBe(10 * 86400);
+  });
+
+  it("respects 23-hour and 25-hour calendar days", () => {
+    for (const [date, hours] of [["2026-03-08", 23], ["2026-11-01", 25]] as const) {
+      const { startUtc, endUtc } = dayBoundsUtc(date, "America/New_York");
+      expect(+endUtc - +startUtc).toBe(hours * 3600000);
+      expect(splitDurationByDate(startUtc, endUtc, "America/New_York").get(date)).toBe(hours * 3600);
+    }
   });
 });
 

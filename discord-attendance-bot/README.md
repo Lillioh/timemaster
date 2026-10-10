@@ -68,19 +68,33 @@ and a `[health] alive …` heartbeat every `HEARTBEAT_INTERVAL_MS`.
 At 00:00 `APP_TIMEZONE` daily, the bot posts the previous calendar day's
 report to `DISCORD_ATTENDANCE_LOG_CHANNEL_ID`:
 
-- Source of truth: `attendance_sessions` for that `attendance_date`
-  (every session shown individually, chronological; bots excluded via
+- Source of truth: `attendance_sessions` overlapping the report's calendar day,
+  including ACTIVE sessions carried over from earlier dates. Every session is
+  shown chronologically in one monospace table per person; bots excluded via
   Discord's `user.bot` flag — the `users` table has no bot column).
 - WORKING = clock-in 1:00 PM–9:00 PM; otherwise CHILLING (by clock-in time).
-  ACTIVE sessions show `Still active` and are never closed or deleted.
-- Long reports split into `Part i/n` messages (2000-char Discord limit).
+  ACTIVE sessions have no clock-out and show elapsed time within the report day.
+  Tables include clock-in/out, duration, type, state, and a per-person total.
+  Times use `APP_TIMEZONE` and a 24-hour clock, including seconds (fractional
+  seconds when present); durations are rounded down to whole seconds.
+  Overnight intervals are clipped to the date: `00:00:00*` indicates a carry-in,
+  `24:00:00*` is the day's end, and `Continues` means the session ended later.
+  Legacy duplicate overnight split rows are counted once. New split rows store
+  the actual per-day boundaries, so their timestamps agree with their duration.
+- Long reports split into `Part i/n` messages (2000-char Discord limit), with
+  complete code fences, repeated column headings, and no lost session rows.
 - Idempotency: `daily_attendance_reports` records one row per date only
   after Discord confirms delivery — restarts never duplicate a report.
 - After archiving, retention deletes `attendance_sessions` older than the
   previous 2 calendar days (`status != 'ACTIVE'` only; `daily_attendance`,
   `users`, config, and `webhook_events` are never touched).
 - Apply the ledger migration: `supabase/migrations/0003_daily_reports.sql`.
-- Tests: `npm test` (`src/daily-report/report.test.ts`, 14 tests).
+- Tests: `npm test` (report formatting, midnight boundaries, source queries,
+  pagination, and retention; no external writes).
+- Read-only preview: `npm run report:preview -- 2026-10-09` prints the report
+  using Supabase records and Discord profile reads. It never posts messages,
+  archives reports, or deletes sessions. Already-posted Discord reports are
+  unchanged; the normal scheduler continues to skip archived dates.
 
 ## How it works
 

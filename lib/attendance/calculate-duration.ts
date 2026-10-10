@@ -16,17 +16,12 @@ export function attendanceDateForInstant(
 
 /** Midnight boundary helpers: returns the UTC instants delimiting a local date. */
 export function dayBoundsUtc(dateStr: string, timeZone: string): { startUtc: Date; endUtc: Date } {
-  // Robust approach: binary-search-free iterative method using Intl.
-  // We find UTC times t such that local date == dateStr at boundaries.
-  // Strategy: start from noon UTC guess and adjust.
   const [y, m, d] = dateStr.split("-").map(Number);
-  // Guess: Date.UTC(y, m-1, d, 12) then compute offset.
-  const guess = new Date(Date.UTC(y, m - 1, d, 12, 0, 0));
-  const offsetMs = tzOffsetMs(guess, timeZone);
-  const startUtc = new Date(Date.UTC(y, m - 1, d, 0, 0, 0) - offsetMsForMidnight(y, m, d, timeZone));
-  void offsetMs;
-  // Correct by probing: find start = latest UTC instant whose local date <= date, at 00:00 local.
-  return { startUtc, endUtc: new Date(startUtc.getTime() + 24 * 3600 * 1000) };
+  // Find each calendar boundary independently: a DST day need not be 24h.
+  return {
+    startUtc: localMidnightUtc(Date.UTC(y, m - 1, d), timeZone),
+    endUtc: localMidnightUtc(Date.UTC(y, m - 1, d + 1), timeZone),
+  };
 }
 
 function tzOffsetMs(date: Date, timeZone: string): number {
@@ -46,10 +41,14 @@ function tzOffsetMs(date: Date, timeZone: string): number {
   return asUtc - date.getTime();
 }
 
-function offsetMsForMidnight(y: number, m: number, d: number, timeZone: string): number {
-  // offset such that local midnight == UTC midnight - offset
-  const probe = new Date(Date.UTC(y, m - 1, d, 12, 0, 0));
-  return tzOffsetMs(probe, timeZone);
+function localMidnightUtc(localUtcMs: number, timeZone: string): Date {
+  let instant = localUtcMs;
+  for (let i = 0; i < 4; i++) {
+    const corrected = localUtcMs - tzOffsetMs(new Date(instant), timeZone);
+    if (corrected === instant) break;
+    instant = corrected;
+  }
+  return new Date(instant);
 }
 
 /** Split [clockIn, clockOut) across local dates, returning Map<dateStr, seconds>. */
@@ -61,10 +60,10 @@ export function splitDurationByDate(
   const result = new Map<string, number>();
   if (clockOut <= clockIn) return result;
   let cursor = new Date(clockIn);
-  // Safety guard: max 7 day iterations (sessions should never be that long, but cap anyway).
-  for (let i = 0; i < 8 && cursor < clockOut; i++) {
+  while (cursor < clockOut) {
     const dateStr = attendanceDateForInstant(cursor, timeZone);
     const { endUtc } = dayBoundsUtc(dateStr, timeZone);
+    if (endUtc <= cursor) throw new Error(`Invalid day boundary for ${dateStr} in ${timeZone}`);
     const segmentEnd = endUtc < clockOut ? endUtc : clockOut;
     const secs = Math.max(0, Math.floor((segmentEnd.getTime() - cursor.getTime()) / 1000));
     result.set(dateStr, (result.get(dateStr) ?? 0) + secs);

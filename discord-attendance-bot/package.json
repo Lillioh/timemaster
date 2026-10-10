@@ -13,7 +13,8 @@
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test src/daily-report/*.test.ts",
-    "report:test-send": "tsx src/daily-report/test-send.ts"
+    "report:test-send": "tsx src/daily-report/test-send.ts",
+    "report:preview": "tsx src/daily-report/preview.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2",

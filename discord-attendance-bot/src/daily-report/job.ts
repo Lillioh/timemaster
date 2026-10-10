@@ -13,39 +13,18 @@
 import type { Client } from "discord.js";
 import { config } from "../config.js";
 import { getSupabase } from "./supabase.js";
+import { fetchSessionsForDate, resolveHumans } from "./sessions.js";
 import {
   manilaDateString,
   msUntilNextMidnight,
   previousDateString,
   retentionCutoff,
 } from "./dates.js";
-import {
-  buildDailyReportMessages,
-  type ReportUserInput,
-} from "./report.js";
+import { buildDailyReportMessages } from "./report.js";
 
 const SAFETY_NET_INTERVAL_MS = 3600_000; // hourly retry for a missed/failed report
 
 let dailyReportRunning = false;
-
-interface SessionRow {
-  id: string;
-  clock_in: string;
-  clock_out: string | null;
-  duration_seconds: number | null;
-  status: string;
-  attendance_date: string;
-  discord_user_id: string;
-  users: {
-    display_name: string | null;
-    discord_username: string | null;
-  } | null;
-}
-
-// Raw shape as returned by the Supabase join (embedded relation is an array).
-interface RawSessionRow extends Omit<SessionRow, "users"> {
-  users: Array<{ display_name: string | null; discord_username: string | null }> | null;
-}
 
 async function isReportSent(targetDate: string): Promise<boolean> {
   const db = getSupabase();
@@ -57,61 +36,6 @@ async function isReportSent(targetDate: string): Promise<boolean> {
     .maybeSingle();
   if (error) throw error;
   return data != null;
-}
-
-async function fetchSessionsForDate(targetDate: string): Promise<SessionRow[]> {
-  const db = getSupabase();
-  const { data, error } = await db
-    .from("attendance_sessions")
-    .select(
-      "id,clock_in,clock_out,duration_seconds,status,attendance_date,discord_user_id,users(display_name,discord_username)",
-    )
-    .eq("attendance_date", targetDate)
-    .order("clock_in", { ascending: true });
-  if (error) throw error;
-  return ((data ?? []) as RawSessionRow[]).map((r) => ({
-    ...r,
-    users: Array.isArray(r.users) ? (r.users[0] ?? null) : r.users,
-  }));
-}
-
-/**
- * Keep only real humans. The users table has no bot flag (active=false also
- * marks deactivated humans), so use Discord's authoritative user.bot flag.
- * Fail open on fetch errors: never silently drop attendance data.
- */
-async function resolveHumans(client: Client, rows: SessionRow[]): Promise<ReportUserInput[]> {
-  const byDiscord = new Map<string, SessionRow[]>();
-  for (const r of rows) {
-    const list = byDiscord.get(r.discord_user_id) ?? [];
-    list.push(r);
-    byDiscord.set(r.discord_user_id, list);
-  }
-
-  const users: ReportUserInput[] = [];
-  let skippedBots = 0;
-  for (const [discordId, sessions] of byDiscord) {
-    const discordUser = await client.users.fetch(discordId).catch(() => null);
-    if (discordUser?.bot) {
-      skippedBots += 1;
-      continue;
-    }
-    if (!discordUser) {
-      console.warn(`[daily-report] user fetch failed, including sessions anyway user=${discordId}`);
-    }
-    const profile = sessions[0]?.users ?? null;
-    users.push({
-      displayName: profile?.display_name ?? profile?.discord_username ?? discordId,
-      sessions: sessions.map((s) => ({
-        clockIn: s.clock_in,
-        clockOut: s.clock_out,
-        durationSeconds: s.duration_seconds,
-        status: s.status,
-      })),
-    });
-  }
-  if (skippedBots > 0) console.log(`[daily-report] skipped bot accounts=${skippedBots}`);
-  return users;
 }
 
 async function markReportSent(
@@ -160,7 +84,7 @@ export async function runDailyReport(targetDate: string, client: Client): Promis
       return;
     }
 
-    const rows = await fetchSessionsForDate(targetDate);
+    const rows = await fetchSessionsForDate(getSupabase(), targetDate, config.appTimezone);
     console.log(`[daily-report] sessions=${rows.length}`);
     const users = await resolveHumans(client, rows);
     const messages = buildDailyReportMessages(targetDate, users, config.appTimezone);
@@ -173,7 +97,7 @@ export async function runDailyReport(targetDate: string, client: Client): Promis
       return;
     }
     for (const content of messages) {
-      await channel.send({ content });
+      await channel.send({ content, allowedMentions: { parse: [] } });
     }
     console.log(
       `[daily-report] sent channel=${config.reportChannelId} messages=${messages.length}`,

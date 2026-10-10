@@ -6,6 +6,9 @@ build/
 dist/
 coverage/
 
+# local attendance report previews
+/artifacts/
+
 # env
 .env
 .env.*

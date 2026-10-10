@@ -25,6 +25,38 @@ export function addDays(dateStr: string, days: number): string {
   return dt.toISOString().slice(0, 10);
 }
 
+/** UTC instants bounding a calendar date in the report timezone. */
+export function dayBoundsUtc(dateStr: string, timeZone: string): { startUtc: Date; endUtc: Date } {
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    timeZone, year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23",
+  });
+  const midnight = (date: string): Date => {
+    const localUtcMs = Date.parse(`${date}T00:00:00Z`);
+    let instant = localUtcMs;
+    for (let i = 0; i < 4; i++) {
+      const parts = formatter.formatToParts(new Date(instant));
+      const get = (type: string) => Number(parts.find((p) => p.type === type)?.value);
+      const represented = Date.UTC(get("year"), get("month") - 1, get("day"),
+        get("hour"), get("minute"), get("second"));
+      const corrected = localUtcMs - (represented - instant);
+      if (corrected === instant) break;
+      instant = corrected;
+    }
+    return new Date(instant);
+  };
+  return { startUtc: midnight(dateStr), endUtc: midnight(addDays(dateStr, 1)) };
+}
+
+/** Exact, 24-hour clock for table cells; avoids hiding sub-minute sessions. */
+export function formatReportTime(iso: string, timeZone: string): string {
+  const instant = new Date(iso);
+  return new Intl.DateTimeFormat("en-GB", {
+    timeZone, hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23",
+    ...(instant.getMilliseconds() ? { fractionalSecondDigits: 3 as const } : {}),
+  }).format(instant);
+}
+
 export function previousDateString(dateStr: string): string {
   return addDays(dateStr, -1);
 }

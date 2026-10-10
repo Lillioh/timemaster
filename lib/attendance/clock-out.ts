@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   calculateDurationSeconds,
+  dayBoundsUtc,
   splitDurationByDate,
 } from "./calculate-duration";
 import { getAppTimezone } from "./constants";
@@ -71,10 +72,11 @@ export async function clockOut(db: SupabaseClient, input: ClockOutInput) {
   // First segment keeps the original row.
   const firstDate = entries[0][0];
   const firstSecs = entries[0][1];
+  const firstEnd = dayBoundsUtc(firstDate, tz).endUtc;
   const { error: updateError } = await db
     .from("attendance_sessions")
     .update({
-      clock_out: now.toISOString(),
+      clock_out: firstEnd.toISOString(),
       duration_seconds: firstSecs,
       attendance_date: firstDate,
       status: "COMPLETED",
@@ -85,25 +87,29 @@ export async function clockOut(db: SupabaseClient, input: ClockOutInput) {
   if (updateError) throw updateError;
 
   // Fetch original row context for continuation rows.
-  const { data: orig } = await db
+  const { data: orig, error: origError } = await db
     .from("attendance_sessions")
     .select("user_id,discord_user_id,guild_id,voice_channel_id,voice_channel_name,clock_in")
     .eq("id", active.id)
     .single();
+  if (origError) throw origError;
 
   for (const [dateStr, secs] of entries.slice(1)) {
-    await db.from("attendance_sessions").insert({
+    const { startUtc, endUtc } = dayBoundsUtc(dateStr, tz);
+    const segmentEnd = endUtc < now ? endUtc : now;
+    const { error: insertError } = await db.from("attendance_sessions").insert({
       user_id: orig?.user_id ?? user.id,
       discord_user_id: orig?.discord_user_id ?? input.discordUserId,
       guild_id: orig?.guild_id ?? "",
       voice_channel_id: orig?.voice_channel_id ?? "",
       voice_channel_name: orig?.voice_channel_name ?? null,
-      clock_in: orig?.clock_in ?? clockIn.toISOString(),
-      clock_out: now.toISOString(),
+      clock_in: startUtc.toISOString(),
+      clock_out: segmentEnd.toISOString(),
       duration_seconds: secs,
       attendance_date: dateStr,
       status: "COMPLETED",
     });
+    if (insertError) throw insertError;
   }
   await recalculateDates(
     db,
