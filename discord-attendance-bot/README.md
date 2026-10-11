@@ -74,7 +74,11 @@ report to `DISCORD_ATTENDANCE_LOG_CHANNEL_ID`:
   Discord's `user.bot` flag — the `users` table has no bot column).
 - WORKING = clock-in 1:00 PM–9:00 PM; otherwise CHILLING (by clock-in time).
   ACTIVE sessions have no clock-out and show elapsed time within the report day.
-  Tables include clock-in/out, duration, type, state, and a per-person total.
+  Tables include clock-in/out, duration, type, and state. Each person's totals
+  and the report summary show Working time, Chilling time, and combined elapsed
+  time separately. Time totals follow the session's recorded type and include
+  elapsed ACTIVE time within the report date; missing/cancelled durations are
+  excluded. Working + Chilling always equals the combined elapsed total.
   Times use `APP_TIMEZONE` and a 24-hour clock, including seconds (fractional
   seconds when present); durations are rounded down to whole seconds.
   Overnight intervals are clipped to the date: `00:00:00*` indicates a carry-in,

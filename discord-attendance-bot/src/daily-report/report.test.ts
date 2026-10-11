@@ -138,6 +138,9 @@ describe("report content", () => {
     assert.equal(messages.length, 1);
     assert.ok(messages[0].includes("No members were present in the Work Voice Channel"));
     assert.ok(messages[0].includes("Total members tracked: `0`"));
+    assert.ok(messages[0].includes("• Working total: `0h 00m 00s`"));
+    assert.ok(messages[0].includes("• Chilling total: `0h 00m 00s`"));
+    assert.ok(messages[0].includes("• Total elapsed: `0h 00m 00s`"));
   });
 
   it("splits long reports into labeled parts without dropping records", () => {
@@ -204,6 +207,47 @@ describe("report content", () => {
     assert.ok(body.includes("0h 02m 30s"));
   });
 
+  it("separates each person's Working and Chilling elapsed time and aggregates both in the summary", () => {
+    const body = buildDailyReportMessages("2026-10-09", [
+      { displayName: "mixed", sessions: [
+        { clockIn: "2026-10-09T04:00:00Z", clockOut: "2026-10-09T04:45:00Z", durationSeconds: 2700, status: "COMPLETED" },
+        { clockIn: "2026-10-09T05:00:00Z", clockOut: "2026-10-09T06:00:00Z", durationSeconds: 3600, status: "COMPLETED" },
+        { clockIn: "2026-10-09T07:00:00Z", clockOut: null, durationSeconds: null, status: "ACTIVE" },
+      ] },
+      { displayName: "chilling-only", sessions: [
+        { clockIn: "2026-10-09T03:00:00Z", clockOut: "2026-10-09T03:10:00Z", durationSeconds: 600, status: "COMPLETED" },
+      ] },
+    ], TZ, new Date("2026-10-09T07:30:00Z")).join("\n");
+    const mixed = body.split("**mixed**")[1].split("**Summary**")[0];
+    assert.ok(mixed.includes("Working total: `1h 30m 00s`"));
+    assert.ok(mixed.includes("Chilling total: `0h 45m 00s`"));
+    assert.ok(mixed.includes("Total on this date: `2h 15m 00s` (includes elapsed active time)"));
+    const chillingOnly = body.split("**chilling-only**")[1].split("**mixed**")[0];
+    assert.ok(chillingOnly.includes("Working total: `0h 00m 00s`"));
+    assert.ok(chillingOnly.includes("Chilling total: `0h 10m 00s`"));
+    const summary = body.split("**Summary**")[1];
+    assert.ok(summary.includes("• Working total: `1h 30m 00s`"));
+    assert.ok(summary.includes("• Chilling total: `0h 55m 00s`"));
+    assert.ok(summary.includes("• Total elapsed: `2h 25m 00s`"));
+  });
+
+  it("uses clipped carryover durations once for category totals, excluding missing and cancelled time", () => {
+    const carryover = { clockIn: "2026-10-08T05:23:00Z", clockOut: "2026-10-08T18:55:00Z", durationSeconds: 10500, status: "COMPLETED" };
+    const body = buildDailyReportMessages("2026-10-09", [{ displayName: "overnight", sessions: [
+      carryover, { ...carryover },
+      { clockIn: "2026-10-09T02:00:00Z", clockOut: "2026-10-09T03:00:00Z", durationSeconds: 3600, status: "CANCELLED" },
+      { clockIn: "2026-10-09T05:00:00Z", clockOut: null, durationSeconds: 3600, status: "COMPLETED" },
+      { clockIn: "2026-10-09T15:00:00Z", clockOut: null, durationSeconds: null, status: "ACTIVE" },
+    ] }], TZ, new Date("2026-10-09T17:00:00Z")).join("\n");
+    assert.ok(body.includes("Working total: `2h 55m 00s`"));
+    assert.ok(body.includes("Chilling total: `1h 00m 00s`"));
+    assert.ok(body.includes("Total on this date: `3h 55m 00s`"));
+    const summary = body.split("**Summary**")[1];
+    assert.ok(summary.includes("• Working total: `2h 55m 00s`"));
+    assert.ok(summary.includes("• Chilling total: `1h 00m 00s`"));
+    assert.ok(summary.includes("• Total elapsed: `3h 55m 00s`"));
+  });
+
   it("does not double count duplicate legacy split rows, or include rows outside the day", () => {
     const session = { clockIn: "2026-10-08T15:00:00Z", clockOut: "2026-10-08T17:00:00Z",
       durationSeconds: 3600, status: "COMPLETED" };
@@ -251,6 +295,8 @@ describe("report content", () => {
     const joined = messages.join("\n");
     for (let i = 1; i <= 100; i++) assert.match(joined, new RegExp(`\\n${i} +\\|`));
     assert.ok(joined.includes("Total on this date: `0h 50m 00s`"));
+    assert.equal((joined.match(/^Working total: `0h 50m 00s`$/gm) ?? []).length, 1);
+    assert.equal((joined.match(/^Chilling total: `0h 00m 00s`$/gm) ?? []).length, 1);
   });
 });
 

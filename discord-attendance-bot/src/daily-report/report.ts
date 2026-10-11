@@ -97,24 +97,38 @@ function renderTable(rows: string[][]): string {
   return ["```text", line(headers), widths.map((w) => "-".repeat(w)).join("-+-"), ...rows.map(line), "```"].join("\n");
 }
 
+function elapsedTotals(rows: ReportRow[]) {
+  let working = 0;
+  let chilling = 0;
+  for (const row of rows) {
+    if (row.bucket === "WORKING") working += row.seconds ?? 0;
+    else chilling += row.seconds ?? 0;
+  }
+  return { working, chilling, total: working + chilling };
+}
+
 function userBlocks(displayName: string, rows: ReportRow[], maxLength: number): string[] {
   // Keep profile text outside fences and prevent it from changing formatting.
   const name = Array.from(displayName.replace(/[\r\n]/g, " ")).slice(0, 100).join("")
     .replace(/[\\`*_~|<>]/g, "\\$&");
   const caption = `**${name}**`;
-  const total = rows.reduce((sum, r) => sum + (r.seconds ?? 0), 0);
-  const totalLine = `Total on this date: \`${exactDuration(total)}\`${rows.some((r) => r.active) ? " (includes elapsed active time)" : ""}.`;
+  const totals = elapsedTotals(rows);
+  const totalLines = [
+    `Working total: \`${exactDuration(totals.working)}\``,
+    `Chilling total: \`${exactDuration(totals.chilling)}\``,
+    `Total on this date: \`${exactDuration(totals.total)}\`${rows.some((r) => r.active) ? " (includes elapsed active time)" : ""}.`,
+  ].join("\n");
   const blocks: string[] = [];
   let current: string[][] = [];
   for (const row of rows) {
-    const candidate = `${caption}\n${renderTable([...current, row.cells])}\n${totalLine}`;
+    const candidate = `${caption}\n${renderTable([...current, row.cells])}\n${totalLines}`;
     if (current.length && candidate.length > maxLength) {
       blocks.push(`${caption}\n${renderTable(current)}`);
       current = [];
     }
     current.push(row.cells);
   }
-  blocks.push(`${caption}\n${renderTable(current)}\n${totalLine}`);
+  blocks.push(`${caption}\n${renderTable(current)}\n${totalLines}`);
   return blocks;
 }
 
@@ -136,12 +150,16 @@ export function buildDailyReportMessages(
     `Active rows have no clock-out; their elapsed time stops at the report cutoff. Type is based on the recorded clock-in (Working: 13:00–21:00).`,
   ].join("\n");
   const allRows = ordered.flatMap((u) => u.rows);
+  const totals = elapsedTotals(allRows);
   const summary = [
     "**Summary**",
     `• Total members tracked: \`${ordered.length}\``,
     `• Working sessions: \`${allRows.filter((r) => !r.active && r.bucket === "WORKING").length}\``,
     `• Chilling sessions: \`${allRows.filter((r) => !r.active && r.bucket === "CHILLING").length}\``,
     `• Still active: \`${allRows.filter((r) => r.active).length}\``,
+    `• Working total: \`${exactDuration(totals.working)}\``,
+    `• Chilling total: \`${exactDuration(totals.chilling)}\``,
+    `• Total elapsed: \`${exactDuration(totals.total)}\``,
   ].join("\n");
   const maxBody = DISCORD_MESSAGE_LIMIT - HEADER_RESERVE;
   const blocks = [intro];
